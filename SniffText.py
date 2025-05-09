@@ -1,3 +1,5 @@
+# Written by REZA TORABI and Developed by phonix.
+
 import re
 import argparse
 import phonenumbers
@@ -6,9 +8,11 @@ from tkinter import filedialog, scrolledtext, messagebox
 from email_validator import validate_email, EmailNotValidError
 import pyclip
 
+# Email and Phone Number Extraction Constants
 EMAIL_REGEX = r"[\w.-]+@[\w.-]+\.\w+"
 PHONE_REGEX = r"\+?\d[\d\s\-()]{7,}\d"
 
+# --- Core Extraction Functions ---
 def is_valid_email(email):
     try:
         validate_email(email)
@@ -17,11 +21,12 @@ def is_valid_email(email):
         return False
 
 def extract_emails(text):
-    return sorted({
+    emails = {
         validate_email(email).email
         for email in re.findall(EMAIL_REGEX, text)
         if is_valid_email(email)
-    })
+    }
+    return sorted(emails)
 
 def extract_phone_numbers(text, region="US"):
     phones = set()
@@ -29,14 +34,14 @@ def extract_phone_numbers(text, region="US"):
         try:
             parsed = phonenumbers.parse(match, region)
             if phonenumbers.is_valid_number(parsed):
-                phones.add(phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164))
+                formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+                phones.add(formatted)
         except phonenumbers.NumberParseException:
             continue
     return sorted(phones)
 
 def find_duplicates(items):
-    seen = set()
-    duplicates = set()
+    seen, duplicates = set(), set()
     for item in items:
         if item in seen:
             duplicates.add(item)
@@ -46,7 +51,7 @@ def find_duplicates(items):
 def extract_summary(text):
     emails = extract_emails(text)
     phones = extract_phone_numbers(text)
-    domains = sorted(set(email.split("@")[-1] for email in emails))
+    domains = sorted({email.split("@")[1] for email in emails})
     country_codes = sorted({
         str(phonenumbers.parse(phone).country_code)
         for phone in phones
@@ -60,17 +65,18 @@ def extract_summary(text):
         "domains": domains,
         "country_codes": country_codes,
         "duplicate_emails": find_duplicates(emails),
-        "duplicate_phones": find_duplicates(phones),
+        "duplicate_phones": find_duplicates(phones)
     }
 
 def filter_emails_by_domain(emails, domain):
-    return sorted(email for email in emails if email.lower().endswith(f"@{domain.lower()}"))
+    return sorted([e for e in emails if e.lower().endswith(f"@{domain.lower()}")])
 
 def filter_phones_by_country_code(phones, code):
-    return sorted(phone for phone in phones if phone.startswith(f"+{code}"))
+    return sorted([p for p in phones if p.startswith(f"+{code}")])
 
-def save_summary_to_file(summary, path):
-    with open(path, "w", encoding="utf-8") as f:
+# --- Output and Summary Utilities ---
+def save_summary_to_file(summary, filepath):
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(f"Valid Emails ({summary['email_count']}):\n")
         f.writelines(f" - {email}\n" for email in summary['emails'])
 
@@ -115,6 +121,7 @@ def print_summary(summary):
 def copy_to_clipboard(text):
     pyclip.copy(text)
 
+# --- Graphical User Interface ---
 def run_gui():
     def load_file():
         path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt")])
@@ -124,7 +131,8 @@ def run_gui():
                 input_text.insert(tk.END, f.read())
 
     def extract_info():
-        summary = extract_summary(input_text.get("1.0", tk.END))
+        text = input_text.get("1.0", tk.END)
+        summary = extract_summary(text)
         result = (
             f"Valid Emails ({summary['email_count']}):\n" + "\n".join(summary['emails']) +
             f"\n\nValid Phone Numbers ({summary['phone_count']}):\n" + "\n".join(summary['phones']) +
@@ -140,9 +148,9 @@ def run_gui():
         result_box.insert(tk.END, result)
 
     def copy_results():
-        content = result_box.get("1.0", tk.END).strip()
-        if content:
-            copy_to_clipboard(content)
+        result = result_box.get("1.0", tk.END).strip()
+        if result:
+            copy_to_clipboard(result)
             messagebox.showinfo("Copied", "Results copied to clipboard.")
         else:
             messagebox.showwarning("No Data", "No results to copy.")
@@ -164,17 +172,42 @@ def run_gui():
 
     root.mainloop()
 
+# --- Main CLI Execution ---
 def main(file_path, output_path=None):
-    with open(file_path, "r", encoding="utf-8") as f:
-        text = f.read()
+    with open(file_path, "r", encoding="utf-8") as file:
+        text = file.read()
     summary = extract_summary(text)
     print_summary(summary)
     if output_path:
         save_summary_to_file(summary, output_path)
         print(f"\nSummary saved to: {output_path}")
 
+# --- Pytest Unit Tests ---
+def test_is_valid_email():
+    assert is_valid_email("test@example.com")
+    assert not is_valid_email("invalid-email")
+
+def test_extract_emails():
+    text = """
+    Contact me at john.doe@example.com and jane.doe@website.org.
+    Invalid email: john.doe@website@org.
+    """
+    assert extract_emails(text) == ["jane.doe@website.org", "john.doe@example.com"]
+
+def test_extract_phone_numbers():
+    text = """
+    Call me at +1-800-555-1234 or (800) 555-5678.
+    Invalid phone: 12345.
+    """
+    assert extract_phone_numbers(text) == ["+18005551234", "+18005555678"]
+
+def test_find_duplicates():
+    assert find_duplicates(["test@example.com", "john.doe@example.com", "test@example.com"]) == ["test@example.com"]
+    assert find_duplicates(["unique@example.com", "another@example.com"]) == []
+
+# --- Entry Point ---
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract emails and phone numbers from a text file or use GUI.")
+    parser = argparse.ArgumentParser(description="Extract emails and phone numbers from a text file or launch GUI.")
     parser.add_argument("file", nargs="?", help="Path to input text file")
     parser.add_argument("--output", help="Optional output file to save summary")
     parser.add_argument("--gui", action="store_true", help="Launch graphical user interface")
@@ -185,4 +218,5 @@ if __name__ == "__main__":
     elif args.file:
         main(args.file, args.output)
     else:
-        print("Please provide a file path or use --gui to launch the interface.")
+        print("Please provide a file path or use --gui to launch the GUI.")
+ 
